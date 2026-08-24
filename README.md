@@ -23,6 +23,39 @@ npm run test:rust
 npm run tauri:build
 ```
 
+Der lokale Releasebuild verwendet [scripts/build-release.ps1](scripts/build-release.ps1),
+lädt bei Bedarf automatisch die MSVC-Umgebung und signiert Updater-Artefakte mit
+`%USERPROFILE%\.tauri\akex.key` und der daneben liegenden Passwortdatei.
+
+## Releases und automatische Updates
+
+Akex prüft bei jedem Start asynchron
+`https://github.com/Akzuwo/AkEx/releases/latest/download/latest.json`. Eine
+neuere, korrekt signierte Version wird heruntergeladen, im Hintergrund über
+den NSIS-Current-User-Installer installiert und danach gestartet. Netzwerk- oder
+Updatefehler werden nur protokolliert und blockieren den Programmstart nicht.
+
+Der Workflow [release.yml](.github/workflows/release.yml) wird im GitHub-Actions-
+Panel über **Run workflow** gestartet. Als Eingabe ist eine SemVer-Version wie
+`0.2.0` erforderlich. Der Workflow synchronisiert alle Versionsfelder, führt
+Frontend-Build und Rust-Tests aus und veröffentlicht MSI, NSIS, Signaturen sowie
+`latest.json` als GitHub Release.
+
+Vor dem ersten Release müssen privater Schlüssel und Passwort als Repository-
+Secrets `TAURI_SIGNING_PRIVATE_KEY` und `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+hinterlegt werden. Mit installierter und authentifizierter GitHub CLI erledigt
+dies:
+
+```powershell
+.\scripts\configure-github-updater-secret.ps1
+```
+
+Der private Schlüssel und sein Passwort liegen ausschließlich unter
+`%USERPROFILE%\.tauri\akex.key` beziehungsweise `akex.key.password`. Beide
+dürfen nicht ins Repository gelangen und müssen gemeinsam sicher gesichert
+werden: Bei Verlust können bestehende Installationen keine neuen Updates mehr
+verifizieren.
+
 Die SQLite-Datenbank liegt im von Tauri bereitgestellten App-Datenverzeichnis.
 Migrationen befinden sich in `src-tauri/migrations`.
 

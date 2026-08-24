@@ -1,0 +1,97 @@
+name: Release Akex
+run-name: Release Akex v${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version im SemVer-Format, z. B. 0.2.0
+        required: true
+        type: string
+      notes:
+        description: Optionale Release Notes
+        required: false
+        default: Automatisch erstelltes Akex-Release.
+        type: string
+      prerelease:
+        description: Als Vorabversion veröffentlichen
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: akex-release
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    name: Windows x64 Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Rust einrichten
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust-Buildcache einrichten
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Version validieren und anwenden
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:RELEASE_VERSION.Trim().TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "'$version' ist keine gültige SemVer-Version. Beispiel: 0.2.0"
+          }
+
+          npm version $version --no-git-tag-version
+
+          $configPath = 'src-tauri/tauri.conf.json'
+          $config = Get-Content -Raw $configPath | ConvertFrom-Json
+          $config.version = $version
+          $config | ConvertTo-Json -Depth 100 | Set-Content -Encoding utf8NoBOM $configPath
+
+          $cargoPath = 'src-tauri/Cargo.toml'
+          $cargo = Get-Content -Raw $cargoPath
+          $versionPattern = [regex]'(?m)^(version\s*=\s*")[^"]+("\s*)$'
+          $cargo = $versionPattern.Replace($cargo, "`${1}$version`${2}", 1)
+          Set-Content -Encoding utf8NoBOM $cargoPath $cargo
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Frontend prüfen
+        run: npm run build
+
+      - name: Rust testen
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Signierte Installer und GitHub Release erstellen
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Akex v__VERSION__
+          releaseBody: ${{ inputs.notes }}
+          releaseDraft: false
+          prerelease: ${{ inputs.prerelease }}
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --bundles nsis,msi

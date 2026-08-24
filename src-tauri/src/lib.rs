@@ -5,6 +5,7 @@ mod filesystem;
 mod indexer;
 mod models;
 mod search;
+mod updater;
 mod watcher;
 
 use std::sync::Arc;
@@ -23,6 +24,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let database = Arc::new(Database::new(data_dir.join("akex-index.sqlite3")));
@@ -34,6 +36,7 @@ pub fn run() {
                 indexer,
                 watcher,
             });
+            updater::spawn_auto_update(app.handle().clone());
             log::info!(target: "database", "Akex database initialized");
             Ok(())
         })

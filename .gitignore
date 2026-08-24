@@ -11,6 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
+*.key
+*.key.pub
+/src-tauri/icons/android/
+/src-tauri/icons/ios/
 
 # Editor directories and files
 .vscode/*
