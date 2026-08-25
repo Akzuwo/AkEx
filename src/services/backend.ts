@@ -1,11 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Entry, Page, PathProperties, StorageAnalysis, VerificationResult, Volume } from '../types'
+import type { Entry, EntrySortField, Page, PathProperties, SortDirection, StorageAnalysis, VerificationResult, Volume } from '../types'
 
 export const backend = {
   volumes: () => invoke<Volume[]>('list_volumes'),
-  directory: (path: string, offset = 0, limit = 300) => invoke<Page<Entry>>('list_directory', { path, offset, limit }),
+  directory: (path: string, offset = 0, limit = 300, sortField: EntrySortField = 'name', sortDirection: SortDirection = 'asc') =>
+    invoke<Page<Entry>>('list_directory', { path, offset, limit, sortField, sortDirection }),
   entry: (path: string) => invoke<Entry | null>('get_entry', { path }),
-  search: (query: string, offset = 0, limit = 300) => invoke<Page<Entry>>('search_entries', { query, offset, limit }),
+  search: (query: string, offset = 0, limit = 300, sortField: EntrySortField = 'modified', sortDirection: SortDirection = 'desc') =>
+    invoke<Page<Entry>>('search_entries', { query, offset, limit, sortField, sortDirection }),
   analyze: (path: string, limit = 20) => invoke<StorageAnalysis>('analyze_storage', { path, limit }),
   startIndex: (rootPath: string) => invoke<string>('start_index', { rootPath }),
   cancelIndex: (scanId: string) => invoke<boolean>('cancel_index', { scanId }),

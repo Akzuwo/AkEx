@@ -1,7 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Copy, ExternalLink, FolderInput, Info, Pencil, Scissors, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, ExternalLink, FolderInput, Info, Pencil, Scissors, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { Entry } from '../types'
+import type { Entry, EntrySortField, SortDirection } from '../types'
 import { fileKind, formatBytes, formatDate } from '../utils/format'
 import { iconFor } from '../utils/fileIcons'
 
@@ -16,6 +16,9 @@ interface Props {
   onClipboard: (mode: 'copy' | 'move', entries: Entry[]) => void
   onPaste?: () => void
   onDropEntries?: (paths: string[], destination: Entry, copy: boolean) => void
+  sortField: EntrySortField
+  sortDirection: SortDirection
+  onSort: (field: EntrySortField, direction: SortDirection) => void
 }
 
 export function FileTable(props: Props) {
@@ -36,6 +39,19 @@ export function FileTable(props: Props) {
     setSelected(previous => additive ? new Set(previous.has(entry.id) ? [...previous].filter(id => id !== entry.id) : [...previous, entry.id]) : new Set([entry.id]))
   }
   function targets(fallback?: Entry) { return selectedEntries.length ? selectedEntries : fallback ? [fallback] : [] }
+  function sortBy(field: EntrySortField) {
+    props.onSort(field, props.sortField === field && props.sortDirection === 'asc' ? 'desc' : 'asc')
+  }
+  function sortHeader(field: EntrySortField, label: string) {
+    const active = props.sortField === field
+    const direction = active ? props.sortDirection : undefined
+    const Icon = direction === 'desc' ? ArrowDown : ArrowUp
+    return <button className={active ? 'active' : ''} type="button" onClick={() => sortBy(field)}
+      aria-label={`${label} ${active ? direction === 'asc' ? 'absteigend' : 'aufsteigend' : 'aufsteigend'} sortieren`}
+      aria-sort={active ? direction === 'asc' ? 'ascending' : 'descending' : 'none'}>
+      <span>{label}</span><Icon aria-hidden="true" />
+    </button>
+  }
   function keyDown(event: React.KeyboardEvent) {
     const primary = selectedEntries[0]
     if (event.key === 'Delete' && selectedEntries.length) { event.preventDefault(); props.onDelete(selectedEntries) }
@@ -49,7 +65,12 @@ export function FileTable(props: Props) {
   }
 
   return <div className="table-shell" tabIndex={0} onKeyDown={keyDown}>
-    <div className="file-header"><span>Name</span><span>Typ</span><span>Grösse</span><span>Geändert</span></div>
+    <div className="file-header">
+      {sortHeader('name', 'Name')}
+      {sortHeader('type', 'Typ')}
+      {sortHeader('size', 'Grösse')}
+      {sortHeader('modified', 'Geändert')}
+    </div>
     <div className="file-scroll" ref={parentRef}>
       {!props.entries.length && <div className="empty-state">{props.emptyText ?? 'Dieser Ordner ist leer.'}</div>}
       <div className="virtual-body" style={{ height: virtualizer.getTotalSize() }}>

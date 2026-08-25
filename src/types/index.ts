@@ -33,6 +33,9 @@ export interface Entry {
 
 export interface Page<T> { items: T[]; total: number; offset: number; limit: number }
 
+export type EntrySortField = 'name' | 'type' | 'size' | 'modified'
+export type SortDirection = 'asc' | 'desc'
+
 export interface ScanProgress {
   scanId: string
   rootPath: string

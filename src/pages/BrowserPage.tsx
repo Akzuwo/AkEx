@@ -4,7 +4,7 @@ import { Breadcrumbs } from '../components/Breadcrumbs'
 import { FileTable } from '../components/FileTable'
 import { PageFooter } from '../components/PageFooter'
 import { backend, errorMessage } from '../services/backend'
-import type { ClipboardOperation, Entry, Page } from '../types'
+import type { ClipboardOperation, Entry, EntrySortField, Page, SortDirection } from '../types'
 import { formatBytes, formatDate } from '../utils/format'
 
 const PAGE_SIZE = 300
@@ -22,6 +22,8 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onClipb
   const [page, setPage] = useState<Page<Entry>>({ items: [], total: 0, offset: 0, limit: PAGE_SIZE })
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [sortField, setSortField] = useState<EntrySortField>('name')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const handledRefresh = useRef(refreshToken)
 
   const load = useCallback(async (offset = 0, reconcile = false) => {
@@ -29,10 +31,10 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onClipb
     setLoading(true); setLoadError('')
     try {
       if (reconcile) await backend.refresh(path)
-      setPage(await backend.directory(path, offset, PAGE_SIZE))
+      setPage(await backend.directory(path, offset, PAGE_SIZE, sortField, sortDirection))
     } catch (error) { setLoadError(errorMessage(error)) }
     finally { setLoading(false) }
-  }, [path])
+  }, [path, sortField, sortDirection])
 
   useEffect(() => { void load(0, false) }, [load])
   useEffect(() => {
@@ -82,7 +84,8 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onClipb
     <div className="page-heading"><div><Breadcrumbs path={path} onNavigate={onNavigate} /><p>{page.total.toLocaleString('de-CH')} Einträge · Ordnergrössen aus dem Index</p></div><div className="heading-actions"><button onClick={createFolder}><FolderPlus />Neuer Ordner</button><button className="icon-button" title="Aktualisieren" onClick={() => void load(page.offset, true)}><RefreshCw /></button></div></div>
     {loadError ? <div className="notice warning"><strong>Ordner nicht verfügbar</strong><span>{loadError}</span><span>Indexiere das Laufwerk unter „Index-Verwaltung“.</span></div> :
       <FileTable entries={page.items} onOpen={open} onReveal={entry => void backend.reveal(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties}
-        onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(entry => entry.fullPath) })} onPaste={paste} onDropEntries={drop} />}
+        onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(entry => entry.fullPath) })} onPaste={paste} onDropEntries={drop}
+        sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} />}
     {loading && <div className="loading-overlay"><LoaderCircle className="spin" />Lade Index …</div>}
     {!loadError && <PageFooter {...page} onPage={offset => void load(offset)} />}
   </section>

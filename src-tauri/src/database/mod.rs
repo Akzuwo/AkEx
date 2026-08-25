@@ -151,7 +151,14 @@ impl Database {
         Ok(())
     }
 
-    pub fn list_directory(&self, path: &str, offset: u64, limit: u64) -> Result<Page<Entry>> {
+    pub fn list_directory(
+        &self,
+        path: &str,
+        offset: u64,
+        limit: u64,
+        sort_field: &str,
+        sort_direction: &str,
+    ) -> Result<Page<Entry>> {
         let conn = self.connect()?;
         let parent_id: i64 = conn.query_row(
             "SELECT id FROM entries WHERE full_path=?1 AND is_directory=1",
@@ -165,12 +172,13 @@ impl Database {
                 |r| r.get::<_, i64>(0),
             )?
             .max(0) as u64;
-        let mut stmt = conn.prepare(
+        let order = entry_order(sort_field, sort_direction, "")?;
+        let mut stmt = conn.prepare(&format!(
             "SELECT id,parent_id,volume_id,name,full_path,extension,is_directory,size,recursive_size,
                     created_at,modified_at,hidden,read_only,system
              FROM entries WHERE parent_id=?1
-             ORDER BY is_directory DESC, name COLLATE NOCASE LIMIT ?2 OFFSET ?3",
-        )?;
+             ORDER BY {order} LIMIT ?2 OFFSET ?3",
+        ))?;
         let items = stmt
             .query_map(
                 params![
@@ -209,7 +217,14 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn search(&self, query: &SearchQuery, offset: u64, limit: u64) -> Result<Page<Entry>> {
+    pub fn search(
+        &self,
+        query: &SearchQuery,
+        offset: u64,
+        limit: u64,
+        sort_field: &str,
+        sort_direction: &str,
+    ) -> Result<Page<Entry>> {
         let conn = self.connect()?;
         let (from, where_sql, values) = query.to_sql();
         let count_sql = format!("SELECT COUNT(*) {from} WHERE {where_sql}");
@@ -218,10 +233,11 @@ impl Database {
                 r.get::<_, i64>(0)
             })?
             .max(0) as u64;
+        let order = entry_order(sort_field, sort_direction, "e.")?;
         let sql = format!(
             "SELECT e.id,e.parent_id,e.volume_id,e.name,e.full_path,e.extension,e.is_directory,e.size,e.recursive_size,
                     e.created_at,e.modified_at,e.hidden,e.read_only,e.system
-             {from} WHERE {where_sql} ORDER BY e.is_directory DESC, e.modified_at DESC LIMIT ? OFFSET ?"
+             {from} WHERE {where_sql} ORDER BY {order} LIMIT ? OFFSET ?"
         );
         let mut paged_values = values;
         paged_values.push(rusqlite::types::Value::Integer(clamp_limit(limit) as i64));
@@ -579,10 +595,42 @@ fn descendant_pattern(path: &str) -> String {
     format!("{}\\\\%", escape_like(path.trim_end_matches('\\')))
 }
 
+fn entry_order(sort_field: &str, sort_direction: &str, prefix: &str) -> Result<String> {
+    let direction = match sort_direction {
+        "asc" => "ASC",
+        "desc" => "DESC",
+        _ => anyhow::bail!("Ungültige Sortierrichtung: {sort_direction}"),
+    };
+    let value = match sort_field {
+        "name" => format!("{prefix}name COLLATE NOCASE"),
+        "type" => format!(
+            "CASE WHEN {prefix}is_directory=1 THEN 'Ordner' WHEN COALESCE({prefix}extension,'')='' THEN 'Datei' ELSE {prefix}extension END COLLATE NOCASE"
+        ),
+        "size" => format!(
+            "CASE WHEN {prefix}is_directory=1 THEN {prefix}recursive_size ELSE {prefix}size END"
+        ),
+        "modified" => format!("{prefix}modified_at"),
+        _ => anyhow::bail!("Ungültiges Sortierfeld: {sort_field}"),
+    };
+    Ok(format!(
+        "{value} {direction}, {prefix}name COLLATE NOCASE ASC, {prefix}id ASC"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn entry_sorting_accepts_every_visible_column() {
+        for field in ["name", "type", "size", "modified"] {
+            assert!(entry_order(field, "asc", "").is_ok());
+            assert!(entry_order(field, "desc", "e.").is_ok());
+        }
+        assert!(entry_order("path", "asc", "").is_err());
+        assert!(entry_order("name", "sideways", "").is_err());
+    }
 
     #[test]
     fn migration_and_parent_delta_are_consistent() {
@@ -698,7 +746,7 @@ mod tests {
         writer.finish(2).unwrap();
         let query =
             SearchQuery::parse("scene ext:blend size:>500mb type:file path:Projekte").unwrap();
-        let result = db.search(&query, 0, 20).unwrap();
+        let result = db.search(&query, 0, 20, "modified", "desc").unwrap();
         assert_eq!(result.total, 1);
         assert_eq!(result.items[0].name, "scene.blend");
         assert_eq!(

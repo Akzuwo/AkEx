@@ -49,11 +49,13 @@ pub fn list_directory(
     path: String,
     offset: u64,
     limit: u64,
+    sort_field: String,
+    sort_direction: String,
 ) -> CommandResult<Page<Entry>> {
     let path = filesystem::normalize_path(&path).map_err(AppError::from)?;
     state
         .database
-        .list_directory(&path, offset, limit)
+        .list_directory(&path, offset, limit, &sort_field, &sort_direction)
         .map_err(|error| {
             log::debug!(target: "database", "Directory query failed for {path}: {error:#}");
             AppError::new(
@@ -94,12 +96,14 @@ pub fn search_entries(
     query: String,
     offset: u64,
     limit: u64,
+    sort_field: String,
+    sort_direction: String,
 ) -> CommandResult<Page<Entry>> {
     let parsed = SearchQuery::parse(&query)
         .map_err(|error| AppError::new("invalid_query", error.to_string()))?;
     state
         .database
-        .search(&parsed, offset, limit)
+        .search(&parsed, offset, limit, &sort_field, &sort_direction)
         .map_err(AppError::from)
 }
 
