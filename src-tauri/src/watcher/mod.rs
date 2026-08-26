@@ -15,6 +15,7 @@ use notify::{
     Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 use parking_lot::Mutex;
+use tauri::{AppHandle, Emitter};
 
 use crate::database::Database;
 
@@ -25,15 +26,17 @@ pub trait ChangeProvider: Send {
 
 pub struct FileSystemWatcherProvider {
     database: Arc<Database>,
+    app: AppHandle,
     watcher: Option<RecommendedWatcher>,
     worker: Option<thread::JoinHandle<()>>,
     stop_tx: Option<mpsc::Sender<()>>,
 }
 
 impl FileSystemWatcherProvider {
-    pub fn new(database: Arc<Database>) -> Self {
+    pub fn new(database: Arc<Database>, app: AppHandle) -> Self {
         Self {
             database,
+            app,
             watcher: None,
             worker: None,
             stop_tx: None,
@@ -47,11 +50,14 @@ impl ChangeProvider for FileSystemWatcherProvider {
         if roots.is_empty() {
             return Ok(());
         }
-        let (event_tx, event_rx) = mpsc::sync_channel::<notify::Result<Event>>(16_384);
+        // A large Steam Workshop cleanup can produce far more than 16k events.
+        // Dropping any of them leaves durable ghost entries in the index, so
+        // keep accepting events and reconcile them once the burst settles.
+        let (event_tx, event_rx) = mpsc::channel::<notify::Result<Event>>();
         let (stop_tx, stop_rx) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(move |event| {
-            if event_tx.try_send(event).is_err() {
-                log::warn!(target: "watcher", "Watcher queue is full; index may need verification");
+            if event_tx.send(event).is_err() {
+                log::debug!(target: "watcher", "Watcher worker has stopped");
             }
         })?;
         for root in roots {
@@ -59,6 +65,7 @@ impl ChangeProvider for FileSystemWatcherProvider {
             log::info!(target: "watcher", "Watching {}", root.display());
         }
         let database = self.database.clone();
+        let app = self.app.clone();
         let worker = thread::Builder::new()
             .name("akex-index-watcher".into())
             .spawn(move || {
@@ -79,6 +86,7 @@ impl ChangeProvider for FileSystemWatcherProvider {
                                 && last_event.elapsed() >= Duration::from_millis(150) =>
                         {
                             reconcile_batch(&database, std::mem::take(&mut pending));
+                            let _ = app.emit("index:changed", ());
                         }
                         Err(RecvTimeoutError::Disconnected) => break,
                         Err(RecvTimeoutError::Timeout) => {}
@@ -130,9 +138,9 @@ pub struct WatcherManager {
 }
 
 impl WatcherManager {
-    pub fn new(database: Arc<Database>) -> Self {
+    pub fn new(database: Arc<Database>, app: AppHandle) -> Self {
         Self {
-            provider: Arc::new(Mutex::new(FileSystemWatcherProvider::new(database))),
+            provider: Arc::new(Mutex::new(FileSystemWatcherProvider::new(database, app))),
         }
     }
     pub fn start(&self, roots: Vec<PathBuf>) -> Result<()> {
@@ -203,10 +211,48 @@ fn reconcile_batch(database: &Database, events: Vec<Event>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use notify::event::RemoveKind;
+    use tempfile::tempdir;
 
     #[test]
     fn usn_provider_is_explicitly_inactive() {
         let mut provider = UsnJournalProvider;
         assert!(provider.start(&[]).is_err());
+    }
+
+    #[test]
+    fn removed_directory_event_prunes_the_whole_indexed_subtree() {
+        let database_dir = tempdir().unwrap();
+        let filesystem_root = tempdir().unwrap();
+        let child = filesystem_root.path().join("workshop-mod");
+        let payload = child.join("payload.bin");
+        std::fs::create_dir(&child).unwrap();
+        std::fs::write(&payload, vec![0_u8; 128]).unwrap();
+
+        let database = Database::new(database_dir.path().join("index.db"));
+        database.initialize().unwrap();
+        let root = filesystem_root.path().to_string_lossy().to_string();
+        database
+            .ensure_volume("test-volume", &root, None, Some("NTFS"), None, None)
+            .unwrap();
+        database.upsert_path(filesystem_root.path()).unwrap();
+        database.upsert_path(&child).unwrap();
+        database.upsert_path(&payload).unwrap();
+
+        std::fs::remove_dir_all(&child).unwrap();
+        reconcile_batch(
+            &database,
+            vec![Event::new(EventKind::Remove(RemoveKind::Any)).add_path(child.clone())],
+        );
+
+        assert!(database
+            .get_entry(&child.to_string_lossy())
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            database.get_entry(&root).unwrap().unwrap().recursive_size,
+            0
+        );
+        assert_eq!(database.list_volumes().unwrap()[0].entry_count, 1);
     }
 }

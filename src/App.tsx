@@ -58,6 +58,17 @@ export default function App() {
     return () => { void Promise.all([complete, failed, cancelled]).then(disposers => disposers.forEach(dispose => dispose())) }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const changed = listen('index:changed', () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => setRefreshToken(value => value + 1), 250)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      void changed.then(dispose => dispose())
+    }
+  }, [])
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLocaleLowerCase() === 'f') { event.preventDefault(); setActiveView('search'); searchRef.current?.focus() }
       else if (event.ctrlKey && event.key.toLocaleLowerCase() === 'n') { event.preventDefault(); if (navigation.currentPath) void openWindow(navigation.currentPath) }
@@ -85,8 +96,8 @@ export default function App() {
       <TabBar tabs={navigation.tabs} activeTabId={navigation.activeTabId} onActivate={id => { navigation.activateTab(id); setActiveView('browser') }} onClose={id => void closeTab(id)} onNew={() => { navigation.openTab(navigation.currentPath); setActiveView('browser') }} />
       <main>
         {activeView === 'browser' && <BrowserPage path={navigation.currentPath} refreshToken={refreshToken} clipboard={clipboard} viewMode={fileViewMode} paneMode={filePaneMode} onViewMode={setFileViewMode} onPaneMode={setFilePaneMode} onNavigate={navigation.navigate} onOpenTab={openTab} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}
-        {activeView === 'search' && <SearchPage query={query} viewMode={fileViewMode} paneMode={filePaneMode} onViewMode={setFileViewMode} onPaneMode={setFilePaneMode} onNavigate={browse} onOpenTab={openTab} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}
-        {activeView === 'analysis' && <AnalysisPage volumes={volumes} initialPath={navigation.currentPath} onNavigate={browse} onError={setError} />}
+        {activeView === 'search' && <SearchPage query={query} refreshToken={refreshToken} viewMode={fileViewMode} paneMode={filePaneMode} onViewMode={setFileViewMode} onPaneMode={setFilePaneMode} onNavigate={browse} onOpenTab={openTab} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}
+        {activeView === 'analysis' && <AnalysisPage volumes={volumes} initialPath={navigation.currentPath} refreshToken={refreshToken} onNavigate={browse} onError={setError} />}
         {activeView === 'index' && <IndexPage volumes={volumes} onChanged={loadVolumes} onError={setError} />}
       </main>
       {clipboard && <div className="clipboard-bar">{clipboard.mode === 'copy' ? 'Kopieren' : 'Verschieben'}: {clipboard.paths.length} Eintrag/Einträge <span>Ctrl+V zum Einfügen</span><button onClick={() => setClipboard(null)}><X /></button></div>}

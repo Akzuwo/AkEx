@@ -17,9 +17,9 @@ function parentPath(path: string): string {
   return /^[a-z]:$/i.test(parent) ? `${parent}\\` : parent
 }
 
-interface Props { query: string; viewMode: FileViewMode; paneMode: FilePaneMode; onViewMode: (mode: FileViewMode) => void; onPaneMode: (mode: FilePaneMode) => void; onNavigate: (path: string) => void; onOpenTab: (path: string) => void; onOpenWindow: (path: string) => void; onClipboard: (value: ClipboardOperation) => void; onError: (message: string) => void }
+interface Props { query: string; refreshToken: number; viewMode: FileViewMode; paneMode: FilePaneMode; onViewMode: (mode: FileViewMode) => void; onPaneMode: (mode: FilePaneMode) => void; onNavigate: (path: string) => void; onOpenTab: (path: string) => void; onOpenWindow: (path: string) => void; onClipboard: (value: ClipboardOperation) => void; onError: (message: string) => void }
 
-export function SearchPage({ query, viewMode, paneMode, onViewMode, onPaneMode, onNavigate, onOpenTab, onOpenWindow, onClipboard, onError }: Props) {
+export function SearchPage({ query, refreshToken, viewMode, paneMode, onViewMode, onPaneMode, onNavigate, onOpenTab, onOpenWindow, onClipboard, onError }: Props) {
   const debounced = useDebouncedValue(query)
   const [page, setPage] = useState<Page<Entry>>({ items: [], total: 0, offset: 0, limit: PAGE_SIZE })
   const [loading, setLoading] = useState(false)
@@ -34,7 +34,7 @@ export function SearchPage({ query, viewMode, paneMode, onViewMode, onPaneMode, 
     catch (error) { setParseError(errorMessage(error)) }
     finally { setLoading(false) }
   }
-  useEffect(() => { void load(0) }, [debounced, sortField, sortDirection]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(0) }, [debounced, sortField, sortDirection, refreshToken]) // eslint-disable-line react-hooks/exhaustive-deps
   async function open(entry: Entry) { try { if (entry.isDirectory) onNavigate(entry.fullPath); else await backend.open(entry.fullPath) } catch (error) { onError(errorMessage(error)) } }
   async function reveal(entry: Entry) { try { await backend.reveal(entry.fullPath) } catch (error) { onError(errorMessage(error)) } }
   async function remove(entries: Entry[]) { if (window.confirm(`${entries.length} Eintrag/Einträge in den Papierkorb verschieben?`)) { const remaining = Math.max(0, page.total - entries.length); const nextOffset = remaining ? Math.min(page.offset, Math.floor((remaining - 1) / PAGE_SIZE) * PAGE_SIZE) : 0; try { await backend.remove(entries.map(e => e.fullPath)); await load(nextOffset) } catch (error) { onError(errorMessage(error)); await load(page.offset) } } }

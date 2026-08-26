@@ -55,7 +55,7 @@ pub fn list_directory(
     sort_direction: String,
 ) -> CommandResult<Page<Entry>> {
     let path = filesystem::normalize_path(&path).map_err(AppError::from)?;
-    state
+    let mut page = state
         .database
         .list_directory(&path, offset, limit, &sort_field, &sort_direction)
         .map_err(|error| {
@@ -64,7 +64,14 @@ pub fn list_directory(
                 "not_indexed",
                 "Dieser Ordner ist noch nicht im Index vorhanden.",
             )
-        })
+        })?;
+    if remove_missing_entries(&state.database, &page.items).map_err(AppError::from)? {
+        page = state
+            .database
+            .list_directory(&path, offset, limit, &sort_field, &sort_direction)
+            .map_err(AppError::from)?;
+    }
+    Ok(page)
 }
 
 #[tauri::command]
@@ -90,7 +97,7 @@ pub fn start_index(
         .map_err(AppError::from)?
         .into_iter()
         .find(|item| item.root_path.eq_ignore_ascii_case(&root_path))
-        .is_none_or(|item| item.last_full_scan.is_none());
+        .map_or(true, |item| item.last_full_scan.is_none());
     Ok(state.indexer.start_scan(app, volume, notify_on_complete))
 }
 
@@ -123,6 +130,15 @@ pub fn analyze_storage(
     limit: u64,
 ) -> CommandResult<StorageAnalysis> {
     let path = filesystem::normalize_path(&path).map_err(AppError::from)?;
+    // A native Windows watcher may lose notifications during very large bulk
+    // operations. Validating the largest indexed entries makes storage
+    // analysis self-healing for exactly those missed deletions that would
+    // otherwise leave the displayed disk usage badly wrong.
+    let candidates = state
+        .database
+        .largest_entries_for_reconciliation(&path, 2_000)
+        .map_err(AppError::from)?;
+    remove_missing_entries(&state.database, &candidates).map_err(AppError::from)?;
     state
         .database
         .storage_analysis(&path, limit)
@@ -466,6 +482,41 @@ fn sync_tree(database: &Database, root: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn remove_missing_entries(database: &Database, entries: &[Entry]) -> anyhow::Result<bool> {
+    let mut missing_roots = Vec::<String>::new();
+    for entry in entries {
+        if missing_roots
+            .iter()
+            .any(|parent| is_same_or_descendant(&entry.full_path, parent))
+        {
+            continue;
+        }
+        match fs::symlink_metadata(&entry.full_path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                database.remove_path(&entry.full_path)?;
+                missing_roots.push(entry.full_path.clone());
+            }
+            Err(_) => {
+                // Access errors must not be mistaken for deletions. The index
+                // remains useful for protected folders which cannot currently
+                // be inspected by the process.
+            }
+        }
+    }
+    Ok(!missing_roots.is_empty())
+}
+
+fn is_same_or_descendant(path: &str, parent: &str) -> bool {
+    let path = path.trim_end_matches('\\');
+    let parent = parent.trim_end_matches('\\');
+    path.eq_ignore_ascii_case(parent)
+        || path
+            .get(..parent.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(parent))
+            && path.as_bytes().get(parent.len()) == Some(&b'\\')
+}
+
 fn encode_query_component(value: &str) -> String {
     value
         .as_bytes()
@@ -501,7 +552,7 @@ fn normalize_delete_paths(paths: Vec<String>) -> anyhow::Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_query_component, normalize_delete_paths};
+    use super::{encode_query_component, is_same_or_descendant, normalize_delete_paths};
 
     #[test]
     fn window_path_is_encoded_as_a_query_component() {
@@ -522,5 +573,21 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(paths, vec!["C:\\daten", "C:\\Andere Datei.txt"]);
+    }
+
+    #[test]
+    fn descendant_check_requires_a_path_separator() {
+        assert!(is_same_or_descendant(
+            "C:\\Steam\\workshop\\123\\file.bin",
+            "c:\\steam\\workshop\\123"
+        ));
+        assert!(is_same_or_descendant(
+            "C:\\Steam\\workshop\\123",
+            "c:\\steam\\workshop\\123\\"
+        ));
+        assert!(!is_same_or_descendant(
+            "C:\\Steam\\workshop\\1234",
+            "C:\\Steam\\workshop\\123"
+        ));
     }
 }

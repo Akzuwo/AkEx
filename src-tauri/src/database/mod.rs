@@ -301,6 +301,25 @@ impl Database {
         })
     }
 
+    /// Returns the entries which contribute most to the indexed size.  Callers
+    /// can cheaply validate this small set against the filesystem before
+    /// presenting a storage analysis, without turning every analysis into a
+    /// complete disk scan.
+    pub fn largest_entries_for_reconciliation(&self, path: &str, limit: u64) -> Result<Vec<Entry>> {
+        let conn = self.connect()?;
+        let pattern = descendant_pattern(path);
+        query_entries(
+            &conn,
+            "SELECT id,parent_id,volume_id,name,full_path,extension,is_directory,size,recursive_size,
+                    created_at,modified_at,hidden,read_only,system
+             FROM entries
+             WHERE (full_path=?1 OR full_path LIKE ?2 ESCAPE '\\') AND full_path<>?1
+             ORDER BY CASE WHEN is_directory=1 THEN recursive_size ELSE size END DESC
+             LIMIT ?3",
+            params![path, pattern, limit.clamp(1, 2_000) as i64],
+        )
+    }
+
     pub fn verify(&self, volume_id: i64) -> Result<VerificationResult> {
         let conn = self.connect()?;
         let integrity_message: String =
@@ -397,6 +416,12 @@ impl Database {
         let old_bytes = old.map(|v| v.1).unwrap_or(0);
         let new_bytes = if is_directory { old_bytes } else { size };
         apply_delta(&tx, parent_id, new_bytes - old_bytes)?;
+        if old.is_none() {
+            tx.execute(
+                "UPDATE volumes SET entry_count=entry_count+1 WHERE id=?1",
+                [volume_id],
+            )?;
+        }
         tx.commit()?;
         Ok(())
     }

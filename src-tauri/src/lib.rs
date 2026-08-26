@@ -32,7 +32,7 @@ pub fn run() {
             let database = Arc::new(Database::new(data_dir.join("akex-index.sqlite3")));
             database.initialize()?;
             let indexer = IndexManager::new(database.clone());
-            let watcher = WatcherManager::new(database.clone());
+            let watcher = WatcherManager::new(database.clone(), app.handle().clone());
             app.manage(AppState {
                 database,
                 indexer,

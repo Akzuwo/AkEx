@@ -4,7 +4,7 @@ import { backend, errorMessage } from '../services/backend'
 import type { StorageAnalysis, Volume } from '../types'
 import { formatBytes, formatCount } from '../utils/format'
 
-export function AnalysisPage({ volumes, initialPath, onNavigate, onError }: { volumes: Volume[]; initialPath: string; onNavigate: (path: string) => void; onError: (message: string) => void }) {
+export function AnalysisPage({ volumes, initialPath, refreshToken, onNavigate, onError }: { volumes: Volume[]; initialPath: string; refreshToken: number; onNavigate: (path: string) => void; onError: (message: string) => void }) {
   const ready = volumes.filter(volume => volume.indexStatus === 'Ready')
   const [path, setPath] = useState(initialPath || ready[0]?.rootPath || '')
   const [analysis, setAnalysis] = useState<StorageAnalysis | null>(null)
@@ -13,7 +13,7 @@ export function AnalysisPage({ volumes, initialPath, onNavigate, onError }: { vo
   useEffect(() => {
     if (!path) return
     setLoading(true); backend.analyze(path).then(setAnalysis).catch(error => onError(errorMessage(error))).finally(() => setLoading(false))
-  }, [path]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [path, refreshToken]) // eslint-disable-line react-hooks/exhaustive-deps
   return <section className="page analysis-page">
     <div className="page-heading"><div><h1><BarChart3 />Speicheranalyse</h1><p>Voraggregierte Werte direkt aus dem Index</p></div><select value={path} onChange={event => setPath(event.target.value)}>{ready.map(volume => <option key={volume.id}>{volume.rootPath}</option>)}</select></div>
     {!ready.length ? <div className="notice warning">Indexiere zuerst ein Laufwerk.</div> : analysis && <>
