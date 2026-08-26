@@ -14,11 +14,12 @@ interface Props {
   refreshToken: number
   clipboard: ClipboardOperation
   onNavigate: (path: string) => void
+  onOpenWindow: (path: string) => void
   onClipboard: (value: ClipboardOperation) => void
   onError: (message: string) => void
 }
 
-export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onClipboard, onError }: Props) {
+export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onOpenWindow, onClipboard, onError }: Props) {
   const [page, setPage] = useState<Page<Entry>>({ items: [], total: 0, offset: 0, limit: PAGE_SIZE })
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -45,6 +46,10 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onClipb
 
   async function open(entry: Entry) {
     try { if (entry.isDirectory) onNavigate(entry.fullPath); else await backend.open(entry.fullPath) }
+    catch (error) { onError(errorMessage(error)) }
+  }
+  async function reveal(entry: Entry) {
+    try { await backend.reveal(entry.fullPath) }
     catch (error) { onError(errorMessage(error)) }
   }
   async function rename(entry: Entry) {
@@ -83,7 +88,7 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onClipb
   return <section className="page browser-page">
     <div className="page-heading"><div><Breadcrumbs path={path} onNavigate={onNavigate} /><p>{page.total.toLocaleString('de-CH')} Einträge · Ordnergrössen aus dem Index</p></div><div className="heading-actions"><button onClick={createFolder}><FolderPlus />Neuer Ordner</button><button className="icon-button" title="Aktualisieren" onClick={() => void load(page.offset, true)}><RefreshCw /></button></div></div>
     {loadError ? <div className="notice warning"><strong>Ordner nicht verfügbar</strong><span>{loadError}</span><span>Indexiere das Laufwerk unter „Index-Verwaltung“.</span></div> :
-      <FileTable entries={page.items} onOpen={open} onReveal={entry => void backend.reveal(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties}
+      <FileTable entries={page.items} onOpen={open} onReveal={entry => void reveal(entry)} onOpenWindow={entry => onOpenWindow(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties}
         onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(entry => entry.fullPath) })} onPaste={paste} onDropEntries={drop}
         sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} />}
     {loading && <div className="loading-overlay"><LoaderCircle className="spin" />Lade Index …</div>}

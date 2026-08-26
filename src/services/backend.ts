@@ -15,6 +15,7 @@ export const backend = {
   startWatchers: () => invoke<void>('start_watchers'),
   open: (path: string) => invoke<void>('open_path', { path }),
   reveal: (path: string) => invoke<void>('reveal_path', { path }),
+  openWindow: (path: string) => invoke<void>('open_window', { path }),
   properties: (path: string) => invoke<PathProperties>('path_properties', { path }),
   createFolder: (parent: string, name: string) => invoke<Entry>('create_folder', { parent, name }),
   rename: (path: string, newName: string) => invoke<Entry>('rename_entry', { path, newName }),

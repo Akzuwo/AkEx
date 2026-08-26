@@ -24,6 +24,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
@@ -52,6 +53,7 @@ pub fn run() {
             commands::start_watchers,
             commands::open_path,
             commands::reveal_path,
+            commands::open_window,
             commands::path_properties,
             commands::create_folder,
             commands::rename_entry,

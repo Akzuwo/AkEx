@@ -13,7 +13,7 @@ import { useNavigation } from './stores/useNavigation'
 import type { ClipboardOperation, View, Volume } from './types'
 
 export default function App() {
-  const navigation = useNavigation()
+  const navigation = useNavigation(new URLSearchParams(window.location.search).get('path') ?? '')
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [activeView, setActiveView] = useState<View>('browser')
   const [query, setQuery] = useState('')
@@ -40,6 +40,7 @@ export default function App() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLocaleLowerCase() === 'f') { event.preventDefault(); setActiveView('search'); searchRef.current?.focus() }
+      else if (event.ctrlKey && event.key.toLocaleLowerCase() === 'n') { event.preventDefault(); if (navigation.currentPath) void openWindow(navigation.currentPath) }
       else if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); navigation.back() }
       else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); navigation.forward() }
       else if (event.altKey && event.key === 'ArrowUp') { event.preventDefault(); navigation.up() }
@@ -50,14 +51,17 @@ export default function App() {
   }, [navigation])
 
   function browse(path: string) { navigation.navigate(path); setActiveView('browser') }
+  async function openWindow(path: string) {
+    try { await backend.openWindow(path) } catch (reason) { setError(errorMessage(reason)) }
+  }
   return <div className="app-shell">
     <Sidebar volumes={volumes} activeView={activeView} currentPath={navigation.currentPath} onView={setActiveView} onVolume={browse} />
     <div className="workspace">
       <Toolbar path={navigation.currentPath} query={query} searchRef={searchRef} canBack={navigation.canBack} canForward={navigation.canForward} canUp={navigation.canUp}
-        onBack={navigation.back} onForward={navigation.forward} onUp={navigation.up} onPath={browse} onQuery={value => { setQuery(value); setActiveView('search') }} onSearchFocus={() => setActiveView('search')} onRefresh={() => setRefreshToken(value => value + 1)} />
+        onBack={navigation.back} onForward={navigation.forward} onUp={navigation.up} onPath={browse} onQuery={value => { setQuery(value); setActiveView('search') }} onSearchFocus={() => setActiveView('search')} onRefresh={() => setRefreshToken(value => value + 1)} onNewWindow={() => void openWindow(navigation.currentPath)} />
       <main>
-        {activeView === 'browser' && <BrowserPage path={navigation.currentPath} refreshToken={refreshToken} clipboard={clipboard} onNavigate={navigation.navigate} onClipboard={setClipboard} onError={setError} />}
-        {activeView === 'search' && <SearchPage query={query} onNavigate={browse} onClipboard={setClipboard} onError={setError} />}
+        {activeView === 'browser' && <BrowserPage path={navigation.currentPath} refreshToken={refreshToken} clipboard={clipboard} onNavigate={navigation.navigate} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}
+        {activeView === 'search' && <SearchPage query={query} onNavigate={browse} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}
         {activeView === 'analysis' && <AnalysisPage volumes={volumes} initialPath={navigation.currentPath} onNavigate={browse} onError={setError} />}
         {activeView === 'index' && <IndexPage volumes={volumes} onChanged={loadVolumes} onError={setError} />}
       </main>

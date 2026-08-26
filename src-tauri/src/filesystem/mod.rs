@@ -139,9 +139,13 @@ pub fn open_path(path: &str) -> Result<()> {
 pub fn reveal_path(path: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        Command::new("explorer.exe")
-            .arg(format!("/select,{path}"))
-            .spawn()?;
+        if Path::new(path).is_dir() {
+            Command::new("explorer.exe").arg(path).spawn()?;
+        } else {
+            Command::new("explorer.exe")
+                .arg(format!("/select,{path}"))
+                .spawn()?;
+        }
     }
     #[cfg(not(windows))]
     {

@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
 use uuid::Uuid;
 
 use crate::{
@@ -50,7 +51,12 @@ impl IndexManager {
         }
     }
 
-    pub fn start_scan(&self, app: AppHandle, volume: DiscoveredVolume) -> String {
+    pub fn start_scan(
+        &self,
+        app: AppHandle,
+        volume: DiscoveredVolume,
+        notify_on_complete: bool,
+    ) -> String {
         let scan_id = Uuid::new_v4().to_string();
         let cancellation = Arc::new(AtomicBool::new(false));
         self.cancellations
@@ -59,7 +65,7 @@ impl IndexManager {
         let manager = self.clone();
         let result_id = scan_id.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let result = manager.scan(&app, &result_id, &volume, &cancellation);
+            let result = manager.scan(&app, &result_id, &volume, &cancellation, notify_on_complete);
             manager.cancellations.lock().remove(&result_id);
             if let Err(error) = result {
                 log::error!(target: "indexer", "Scan {} failed: {error:#}", result_id);
@@ -90,6 +96,7 @@ impl IndexManager {
         scan_id: &str,
         volume: &DiscoveredVolume,
         cancellation: &AtomicBool,
+        notify_on_complete: bool,
     ) -> Result<()> {
         let root = Path::new(&volume.root_path);
         let volume_db_id = self.database.ensure_volume(
@@ -243,6 +250,20 @@ impl IndexManager {
                 errors,
             },
         )?;
+        if notify_on_complete {
+            if let Err(error) = app
+                .notification()
+                .builder()
+                .title("Indexierung abgeschlossen")
+                .body(format!(
+                    "{} ist jetzt vollständig indexiert.",
+                    volume.root_path
+                ))
+                .show()
+            {
+                log::warn!(target: "indexer", "Completion notification could not be shown: {error}");
+            }
+        }
         log::info!(target: "indexer", "Completed scan of {}: {} entries, {} bytes, {} errors", volume.root_path, count, bytes, errors);
         Ok(())
     }

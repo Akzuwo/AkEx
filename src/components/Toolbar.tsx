@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ArrowUp, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUp, PanelsTopLeft, RefreshCw, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
   onQuery: (query: string) => void
   onSearchFocus: () => void
   onRefresh: () => void
+  onNewWindow: () => void
 }
 
 export function Toolbar(props: Props) {
@@ -26,6 +27,7 @@ export function Toolbar(props: Props) {
       <button title="Vorwärts (Alt+Rechts)" disabled={!props.canForward} onClick={props.onForward}><ArrowRight /></button>
       <button title="Übergeordnet (Alt+Hoch)" disabled={!props.canUp} onClick={props.onUp}><ArrowUp /></button>
       <button title="Aktualisieren" disabled={!props.path} onClick={props.onRefresh}><RefreshCw /></button>
+      <button title="Neues Fenster (Ctrl+N)" disabled={!props.path} onClick={props.onNewWindow}><PanelsTopLeft /></button>
     </div>
     <form className="path-field" onSubmit={event => { event.preventDefault(); props.onPath(editingPath) }}>
       <input aria-label="Pfad" value={editingPath} onChange={event => setEditingPath(event.target.value)} />

@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ArrowDown, ArrowUp, Copy, ExternalLink, FolderInput, Info, Pencil, Scissors, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, ExternalLink, FolderInput, Info, PanelsTopLeft, Pencil, Scissors, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { Entry, EntrySortField, SortDirection } from '../types'
 import { fileKind, formatBytes, formatDate } from '../utils/format'
@@ -10,6 +10,7 @@ interface Props {
   emptyText?: string
   onOpen: (entry: Entry) => void
   onReveal: (entry: Entry) => void
+  onOpenWindow?: (entry: Entry) => void
   onRename: (entry: Entry) => void
   onDelete: (entries: Entry[]) => void
   onProperties: (entry: Entry) => void
@@ -93,6 +94,7 @@ export function FileTable(props: Props) {
     </div>
     {menu && <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}>
       <button onClick={() => { props.onOpen(menu.entry); setMenu(null) }}><ExternalLink />Öffnen</button>
+      {menu.entry.isDirectory && props.onOpenWindow && <button onClick={() => { props.onOpenWindow?.(menu.entry); setMenu(null) }}><PanelsTopLeft />In neuem Fenster öffnen</button>}
       <button onClick={() => { props.onReveal(menu.entry); setMenu(null) }}><FolderInput />Im Ordner anzeigen</button>
       <button onClick={() => { void navigator.clipboard.writeText(menu.entry.fullPath); setMenu(null) }}><Copy />Pfad kopieren</button>
       <hr />

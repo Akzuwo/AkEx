@@ -6,6 +6,7 @@ use std::{
 };
 
 use tauri::{AppHandle, State};
+use uuid::Uuid;
 
 use crate::{
     database::Database,
@@ -82,7 +83,14 @@ pub fn start_index(
         .into_iter()
         .find(|volume| volume.root_path.eq_ignore_ascii_case(&root_path))
         .ok_or_else(|| AppError::new("volume_unavailable", "Das Laufwerk ist nicht verfügbar."))?;
-    Ok(state.indexer.start_scan(app, volume))
+    let notify_on_complete = state
+        .database
+        .list_volumes()
+        .map_err(AppError::from)?
+        .into_iter()
+        .find(|item| item.root_path.eq_ignore_ascii_case(&root_path))
+        .is_none_or(|item| item.last_full_scan.is_none());
+    Ok(state.indexer.start_scan(app, volume, notify_on_complete))
 }
 
 #[tauri::command]
@@ -149,6 +157,21 @@ pub fn open_path(path: String) -> CommandResult<()> {
 #[tauri::command]
 pub fn reveal_path(path: String) -> CommandResult<()> {
     filesystem::reveal_path(&path).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub async fn open_window(app: AppHandle, path: String) -> CommandResult<()> {
+    let path = filesystem::normalize_path(&path).map_err(AppError::from)?;
+    let label = format!("akex-{}", Uuid::new_v4());
+    let url =
+        tauri::WebviewUrl::App(format!("index.html?path={}", encode_query_component(&path)).into());
+    tauri::WebviewWindowBuilder::new(&app, label, url)
+        .title(format!("Akex – {path}"))
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(960.0, 640.0)
+        .build()
+        .map_err(|error| AppError::new("window_error", error.to_string()))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -303,4 +326,31 @@ fn sync_tree(database: &Database, root: &Path) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn encode_query_component(value: &str) -> String {
+    value
+        .as_bytes()
+        .iter()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (*byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_query_component;
+
+    #[test]
+    fn window_path_is_encoded_as_a_query_component() {
+        assert_eq!(
+            encode_query_component("C:\\Meine Dateien\\Bilder"),
+            "C%3A%5CMeine%20Dateien%5CBilder"
+        );
+        assert_eq!(encode_query_component("D:\\Grüsse"), "D%3A%5CGr%C3%BCsse");
+    }
 }
