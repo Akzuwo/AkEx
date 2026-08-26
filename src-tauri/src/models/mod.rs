@@ -94,3 +94,13 @@ pub struct StorageAnalysis {
     pub largest_files: Vec<Entry>,
     pub extensions: Vec<ExtensionUsage>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePreview {
+    pub kind: String,
+    pub mime_type: Option<String>,
+    pub data: Option<String>,
+    pub text: Option<String>,
+    pub message: Option<String>,
+}

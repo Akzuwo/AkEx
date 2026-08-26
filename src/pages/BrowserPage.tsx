@@ -3,8 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { FileTable } from '../components/FileTable'
 import { PageFooter } from '../components/PageFooter'
+import { PreviewPane } from '../components/PreviewPane'
+import { ViewMenu } from '../components/ViewMenu'
 import { backend, errorMessage } from '../services/backend'
-import type { ClipboardOperation, Entry, EntrySortField, Page, SortDirection } from '../types'
+import type { ClipboardOperation, Entry, EntrySortField, FilePaneMode, FileViewMode, Page, SortDirection } from '../types'
 import { formatBytes, formatDate } from '../utils/format'
 import { startNativeFileDrag } from '../utils/nativeDrag'
 
@@ -14,18 +16,24 @@ interface Props {
   path: string
   refreshToken: number
   clipboard: ClipboardOperation
+  viewMode: FileViewMode
+  paneMode: FilePaneMode
+  onViewMode: (mode: FileViewMode) => void
+  onPaneMode: (mode: FilePaneMode) => void
   onNavigate: (path: string) => void
+  onOpenTab: (path: string) => void
   onOpenWindow: (path: string) => void
   onClipboard: (value: ClipboardOperation) => void
   onError: (message: string) => void
 }
 
-export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onOpenWindow, onClipboard, onError }: Props) {
+export function BrowserPage({ path, refreshToken, clipboard, viewMode, paneMode, onViewMode, onPaneMode, onNavigate, onOpenTab, onOpenWindow, onClipboard, onError }: Props) {
   const [page, setPage] = useState<Page<Entry>>({ items: [], total: 0, offset: 0, limit: PAGE_SIZE })
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [sortField, setSortField] = useState<EntrySortField>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [selectedEntries, setSelectedEntries] = useState<Entry[]>([])
   const handledRefresh = useRef(refreshToken)
 
   const load = useCallback(async (offset = 0, reconcile = false) => {
@@ -98,12 +106,12 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onOpenW
   }
 
   return <section className="page browser-page">
-    <div className="page-heading"><div><Breadcrumbs path={path} onNavigate={onNavigate} /><p>{page.total.toLocaleString('de-CH')} Einträge · Ordnergrössen aus dem Index</p></div><div className="heading-actions"><button onClick={createFolder}><FolderPlus />Neuer Ordner</button><button className="icon-button" title="Aktualisieren" onClick={() => void load(page.offset, true)}><RefreshCw /></button></div></div>
+    <div className="page-heading"><div><Breadcrumbs path={path} onNavigate={onNavigate} /><p>{page.total.toLocaleString('de-CH')} Einträge · Ordnergrössen aus dem Index</p></div><div className="heading-actions"><ViewMenu viewMode={viewMode} paneMode={paneMode} onViewMode={onViewMode} onPaneMode={onPaneMode} sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} /><button onClick={createFolder}><FolderPlus />Neuer Ordner</button><button className="icon-button" title="Aktualisieren" onClick={() => void load(page.offset, true)}><RefreshCw /></button></div></div>
     {loadError ? <div className="notice warning"><strong>Ordner nicht verfügbar</strong><span>{loadError}</span><span>Indexiere das Laufwerk unter „Index-Verwaltung“.</span></div> :
-      <FileTable entries={page.items} onOpen={open} onReveal={entry => void reveal(entry)} onOpenWindow={entry => onOpenWindow(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties}
+      <div className="file-workspace"><div className="file-main"><FileTable entries={page.items} viewMode={viewMode} onSelectionChange={setSelectedEntries} onOpen={open} onReveal={entry => void reveal(entry)} onOpenTab={entry => onOpenTab(entry.fullPath)} onOpenWindow={entry => onOpenWindow(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties}
         onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(entry => entry.fullPath) })} onPaste={paste} onDropEntries={drop} onDragOut={(entries, copy) => void dragOut(entries, copy)}
-        sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} />}
+        sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} />
+      <PageFooter {...page} onPage={offset => void load(offset)} /></div>{paneMode !== 'none' && <PreviewPane key={`${paneMode}:${selectedEntries.map(entry => entry.fullPath).join('|')}`} mode={paneMode} entries={selectedEntries} onClose={() => onPaneMode('none')} />}</div>}
     {loading && <div className="loading-overlay"><LoaderCircle className="spin" />Lade Index …</div>}
-    {!loadError && <PageFooter {...page} onPage={offset => void load(offset)} />}
   </section>
 }

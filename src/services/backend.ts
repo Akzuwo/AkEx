@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Entry, EntrySortField, Page, PathProperties, SortDirection, StorageAnalysis, VerificationResult, Volume } from '../types'
+import type { Entry, EntrySortField, FilePreview, Page, PathProperties, SortDirection, StorageAnalysis, VerificationResult, Volume } from '../types'
 
 export const backend = {
   volumes: () => invoke<Volume[]>('list_volumes'),
@@ -18,6 +18,7 @@ export const backend = {
   openWindow: (path: string) => invoke<void>('open_window', { path }),
   validateDragPaths: (paths: string[]) => invoke<void>('validate_drag_paths', { paths }),
   properties: (path: string) => invoke<PathProperties>('path_properties', { path }),
+  preview: (path: string) => invoke<FilePreview>('preview_file', { path }),
   createFolder: (parent: string, name: string) => invoke<Entry>('create_folder', { parent, name }),
   rename: (path: string, newName: string) => invoke<Entry>('rename_entry', { path, newName }),
   remove: (paths: string[]) => invoke<void>('delete_entries', { paths }),

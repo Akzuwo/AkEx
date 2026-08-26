@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
@@ -13,7 +14,7 @@ use crate::{
     error::AppError,
     filesystem::{self, PathProperties},
     indexer::IndexManager,
-    models::{Entry, Page, StorageAnalysis, VerificationResult, Volume},
+    models::{Entry, FilePreview, Page, StorageAnalysis, VerificationResult, Volume},
     search::SearchQuery,
     watcher::WatcherManager,
 };
@@ -192,6 +193,92 @@ pub fn validate_drag_paths(paths: Vec<String>) -> CommandResult<()> {
 #[tauri::command]
 pub fn path_properties(path: String) -> CommandResult<PathProperties> {
     filesystem::properties(&path).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn preview_file(path: String) -> CommandResult<FilePreview> {
+    const TEXT_LIMIT: u64 = 2 * 1024 * 1024;
+    const MEDIA_LIMIT: u64 = 32 * 1024 * 1024;
+    let path = PathBuf::from(filesystem::normalize_path(&path).map_err(AppError::from)?);
+    let metadata = fs::metadata(&path).map_err(AppError::from)?;
+    if !metadata.is_file() {
+        return Ok(unavailable_preview(
+            "Für Ordner ist keine Dateivorschau verfügbar.",
+        ));
+    }
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let (kind, mime_type) = match extension.as_str() {
+        "jpg" | "jpeg" => ("image", "image/jpeg"),
+        "png" => ("image", "image/png"),
+        "gif" => ("image", "image/gif"),
+        "webp" => ("image", "image/webp"),
+        "bmp" => ("image", "image/bmp"),
+        "svg" => ("image", "image/svg+xml"),
+        "pdf" => ("pdf", "application/pdf"),
+        "mp3" => ("audio", "audio/mpeg"),
+        "wav" => ("audio", "audio/wav"),
+        "ogg" | "oga" => ("audio", "audio/ogg"),
+        "m4a" => ("audio", "audio/mp4"),
+        "flac" => ("audio", "audio/flac"),
+        "mp4" | "m4v" => ("video", "video/mp4"),
+        "webm" => ("video", "video/webm"),
+        "ogv" => ("video", "video/ogg"),
+        "mov" => ("video", "video/quicktime"),
+        "txt" | "md" | "json" | "jsonl" | "yaml" | "yml" | "toml" | "xml" | "csv" | "log"
+        | "ini" | "conf" | "cfg" | "rs" | "ts" | "tsx" | "js" | "jsx" | "css" | "scss" | "html"
+        | "htm" | "py" | "ps1" | "bat" | "cmd" | "sh" | "sql" | "java" | "kt" | "go" | "c"
+        | "h" | "cpp" | "hpp" | "cs" | "swift" => ("text", "text/plain"),
+        _ => {
+            return Ok(unavailable_preview(
+                "Für diesen Dateityp ist keine Vorschau verfügbar.",
+            ))
+        }
+    };
+
+    let limit = if kind == "text" {
+        TEXT_LIMIT
+    } else {
+        MEDIA_LIMIT
+    };
+    if metadata.len() > limit {
+        return Ok(unavailable_preview(if kind == "text" {
+            "Die Textdatei ist für die Vorschau zu groß (maximal 2 MB)."
+        } else {
+            "Die Datei ist für die Vorschau zu groß (maximal 32 MB)."
+        }));
+    }
+    let bytes = fs::read(path).map_err(AppError::from)?;
+    if kind == "text" {
+        return Ok(FilePreview {
+            kind: kind.into(),
+            mime_type: Some(mime_type.into()),
+            data: None,
+            text: Some(String::from_utf8_lossy(&bytes).into_owned()),
+            message: None,
+        });
+    }
+    Ok(FilePreview {
+        kind: kind.into(),
+        mime_type: Some(mime_type.into()),
+        data: Some(STANDARD.encode(bytes)),
+        text: None,
+        message: None,
+    })
+}
+
+fn unavailable_preview(message: &str) -> FilePreview {
+    FilePreview {
+        kind: "unavailable".into(),
+        mime_type: None,
+        data: None,
+        text: None,
+        message: Some(message.into()),
+    }
 }
 
 #[tauri::command]

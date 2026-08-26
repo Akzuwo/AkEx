@@ -57,6 +57,7 @@ pub fn run() {
             commands::open_window,
             commands::validate_drag_paths,
             commands::path_properties,
+            commands::preview_file,
             commands::create_folder,
             commands::rename_entry,
             commands::delete_entries,

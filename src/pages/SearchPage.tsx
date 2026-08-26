@@ -2,9 +2,11 @@ import { LoaderCircle, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { FileTable } from '../components/FileTable'
 import { PageFooter } from '../components/PageFooter'
+import { PreviewPane } from '../components/PreviewPane'
+import { ViewMenu } from '../components/ViewMenu'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { backend, errorMessage } from '../services/backend'
-import type { ClipboardOperation, Entry, EntrySortField, Page, SortDirection } from '../types'
+import type { ClipboardOperation, Entry, EntrySortField, FilePaneMode, FileViewMode, Page, SortDirection } from '../types'
 import { formatBytes, formatDate } from '../utils/format'
 import { startNativeFileDrag } from '../utils/nativeDrag'
 
@@ -15,13 +17,16 @@ function parentPath(path: string): string {
   return /^[a-z]:$/i.test(parent) ? `${parent}\\` : parent
 }
 
-export function SearchPage({ query, onNavigate, onOpenWindow, onClipboard, onError }: { query: string; onNavigate: (path: string) => void; onOpenWindow: (path: string) => void; onClipboard: (value: ClipboardOperation) => void; onError: (message: string) => void }) {
+interface Props { query: string; viewMode: FileViewMode; paneMode: FilePaneMode; onViewMode: (mode: FileViewMode) => void; onPaneMode: (mode: FilePaneMode) => void; onNavigate: (path: string) => void; onOpenTab: (path: string) => void; onOpenWindow: (path: string) => void; onClipboard: (value: ClipboardOperation) => void; onError: (message: string) => void }
+
+export function SearchPage({ query, viewMode, paneMode, onViewMode, onPaneMode, onNavigate, onOpenTab, onOpenWindow, onClipboard, onError }: Props) {
   const debounced = useDebouncedValue(query)
   const [page, setPage] = useState<Page<Entry>>({ items: [], total: 0, offset: 0, limit: PAGE_SIZE })
   const [loading, setLoading] = useState(false)
   const [parseError, setParseError] = useState('')
   const [sortField, setSortField] = useState<EntrySortField>('modified')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [selectedEntries, setSelectedEntries] = useState<Entry[]>([])
   async function load(offset = 0) {
     if (!debounced.trim()) { setPage({ items: [], total: 0, offset: 0, limit: PAGE_SIZE }); return }
     setLoading(true); setParseError('')
@@ -37,12 +42,12 @@ export function SearchPage({ query, onNavigate, onOpenWindow, onClipboard, onErr
   async function properties(entry: Entry) { try { const value = await backend.properties(entry.fullPath); window.alert(`${value.path}\n\nGrösse: ${formatBytes(entry.isDirectory ? entry.recursiveSize : value.size)}\nGeändert: ${formatDate(value.modifiedAt)}`) } catch (error) { onError(errorMessage(error)) } }
   async function dragOut(entries: Entry[], copy: boolean) { try { const paths = entries.map(entry => entry.fullPath); await backend.validateDragPaths(paths); const dropped = await startNativeFileDrag(paths, entries.every(entry => entry.isDirectory), copy); if (dropped && !copy) { const parents = [...new Set(paths.map(parentPath))]; await Promise.all(parents.map(parent => backend.refresh(parent))); await load(page.offset) } } catch (error) { onError(errorMessage(error)) } }
   return <section className="page search-page">
-    <div className="page-heading"><div><h1><Search />Index-Suche</h1><p>{debounced ? `${page.total.toLocaleString('de-CH')} Treffer` : 'Dateien und Ordner ohne Dateisystemscan finden'}</p></div></div>
+    <div className="page-heading"><div><h1><Search />Index-Suche</h1><p>{debounced ? `${page.total.toLocaleString('de-CH')} Treffer` : 'Dateien und Ordner ohne Dateisystemscan finden'}</p></div><div className="heading-actions"><ViewMenu viewMode={viewMode} paneMode={paneMode} onViewMode={onViewMode} onPaneMode={onPaneMode} sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} /></div></div>
     <div className="syntax-help"><code>ext:blend</code><code>size:&gt;1gb</code><code>type:file</code><code>path:Projekte</code><span>Filter lassen sich kombinieren.</span></div>
     {parseError && <div className="notice error">{parseError}</div>}
-    <FileTable entries={page.items} emptyText={debounced ? 'Keine Treffer.' : 'Suchbegriff oben eingeben.'} onOpen={open} onReveal={entry => void reveal(entry)} onOpenWindow={entry => onOpenWindow(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties} onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(e => e.fullPath) })}
+    <div className="file-workspace"><div className="file-main"><FileTable entries={page.items} viewMode={viewMode} onSelectionChange={setSelectedEntries} emptyText={debounced ? 'Keine Treffer.' : 'Suchbegriff oben eingeben.'} onOpen={open} onReveal={entry => void reveal(entry)} onOpenTab={entry => onOpenTab(entry.fullPath)} onOpenWindow={entry => onOpenWindow(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties} onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(e => e.fullPath) })}
       onDragOut={(entries, copy) => void dragOut(entries, copy)} sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} />
+    <PageFooter {...page} onPage={offset => void load(offset)} /></div>{paneMode !== 'none' && <PreviewPane key={`${paneMode}:${selectedEntries.map(entry => entry.fullPath).join('|')}`} mode={paneMode} entries={selectedEntries} onClose={() => onPaneMode('none')} />}</div>
     {loading && <div className="loading-overlay"><LoaderCircle className="spin" />Suche …</div>}
-    <PageFooter {...page} onPage={offset => void load(offset)} />
   </section>
 }

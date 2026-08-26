@@ -35,6 +35,16 @@ export interface Page<T> { items: T[]; total: number; offset: number; limit: num
 
 export type EntrySortField = 'name' | 'type' | 'size' | 'modified'
 export type SortDirection = 'asc' | 'desc'
+export type FileViewMode = 'extraLarge' | 'large' | 'medium' | 'small' | 'list' | 'details' | 'tiles' | 'content'
+export type FilePaneMode = 'none' | 'details' | 'preview'
+
+export interface FilePreview {
+  kind: 'image' | 'text' | 'pdf' | 'audio' | 'video' | 'unavailable'
+  mimeType?: string
+  data?: string
+  text?: string
+  message?: string
+}
 
 export interface ScanProgress {
   scanId: string

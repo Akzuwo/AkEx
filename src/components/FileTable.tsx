@@ -2,7 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { ArrowDown, ArrowUp, Copy, ExternalLink, FolderInput, Info, PanelsTopLeft, Pencil, Scissors, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { Entry, EntrySortField, SortDirection } from '../types'
+import type { Entry, EntrySortField, FileViewMode, SortDirection } from '../types'
 import { fileKind, formatBytes, formatDate } from '../utils/format'
 import { iconFor } from '../utils/fileIcons'
 
@@ -11,6 +11,7 @@ interface Props {
   emptyText?: string
   onOpen: (entry: Entry) => void
   onReveal: (entry: Entry) => void
+  onOpenTab?: (entry: Entry) => void
   onOpenWindow?: (entry: Entry) => void
   onRename: (entry: Entry) => void
   onDelete: (entries: Entry[]) => void
@@ -22,6 +23,8 @@ interface Props {
   sortField: EntrySortField
   sortDirection: SortDirection
   onSort: (field: EntrySortField, direction: SortDirection) => void
+  viewMode: FileViewMode
+  onSelectionChange?: (entries: Entry[]) => void
 }
 
 export function FileTable(props: Props) {
@@ -37,6 +40,7 @@ export function FileTable(props: Props) {
   const selectedEntries = props.entries.filter(entry => selected.has(entry.id))
 
   useEffect(() => { setSelected(new Set()); setMenu(null) }, [props.entries])
+  useEffect(() => { props.onSelectionChange?.(selectedEntries) }, [selected, props.entries, props.onSelectionChange]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const close = () => setMenu(null)
     window.addEventListener('click', close)
@@ -57,7 +61,7 @@ export function FileTable(props: Props) {
     let unlisten: (() => void) | undefined
     const entryAt = (position: { x: number; y: number }) => {
       const scale = window.devicePixelRatio || 1
-      const element = document.elementFromPoint(position.x / scale, position.y / scale)?.closest<HTMLElement>('.file-row')
+      const element = document.elementFromPoint(position.x / scale, position.y / scale)?.closest<HTMLElement>('[data-entry-id]')
       const id = Number(element?.dataset.entryId)
       return visibleEntries.find(entry => entry.id === id && entry.isDirectory)
     }
@@ -119,35 +123,51 @@ export function FileTable(props: Props) {
     else if (event.key === 'Escape') { setSelected(new Set()); setMenu(null) }
   }
 
+  function renderEntry(entry: Entry, top?: number) {
+    const Icon = iconFor(entry.extension, entry.isDirectory)
+    const details = props.viewMode === 'details'
+    const iconSize = props.viewMode === 'extraLarge' ? 72 : props.viewMode === 'large' ? 56 : props.viewMode === 'medium' ? 38 : props.viewMode === 'tiles' || props.viewMode === 'content' ? 34 : 18
+    return <div key={entry.id} data-entry-id={entry.id} title="Ziehen zum Verschieben · Ctrl gedrückt halten zum Kopieren"
+      className={`${details ? 'file-row' : `file-item view-${props.viewMode}`} ${selected.has(entry.id) ? 'selected' : ''} ${dropTarget === entry.id ? 'drop-target' : ''}`}
+      style={details ? { transform: `translateY(${top ?? 0}px)` } : undefined}
+      draggable onDragStart={event => dragOut(event, entry)}
+      onDragOver={event => { if (entry.isDirectory) event.preventDefault() }}
+      onDrop={event => { if (!entry.isDirectory || !props.onDropEntries) return; event.preventDefault(); const data = event.dataTransfer.getData('application/x-akex-paths'); if (data) props.onDropEntries(JSON.parse(data), entry, event.ctrlKey) }}
+      onClick={event => select(entry, event.ctrlKey)} onDoubleClick={() => props.onOpen(entry)}
+      onContextMenu={event => openMenu(event, entry)}>
+      {details ? <>
+        <span className="name-cell"><Icon className={entry.isDirectory ? 'folder-icon' : 'file-icon'} size={19} /><span>{entry.name}</span>{entry.hidden && <small>versteckt</small>}</span>
+        <span>{fileKind(entry.extension, entry.isDirectory)}</span>
+        <span>{formatBytes(entry.isDirectory ? entry.recursiveSize : entry.size)}</span>
+        <span>{formatDate(entry.modifiedAt)}</span>
+      </> : <>
+        <Icon className={`item-icon ${entry.isDirectory ? 'folder-icon' : 'file-icon'}`} size={iconSize} />
+        <div className="item-copy">
+          <span className="item-name">{entry.name}</span>
+          {(props.viewMode === 'tiles' || props.viewMode === 'content') && <small>{fileKind(entry.extension, entry.isDirectory)} · {formatBytes(entry.isDirectory ? entry.recursiveSize : entry.size)}</small>}
+          {props.viewMode === 'content' && <small>Geändert: {formatDate(entry.modifiedAt)} · {entry.fullPath}</small>}
+          {entry.hidden && <small>Versteckt</small>}
+        </div>
+      </>}
+    </div>
+  }
+
   return <div className="table-shell" ref={shellRef} tabIndex={0} onKeyDown={keyDown}>
-    <div className="file-header">
+    {props.viewMode === 'details' && <div className="file-header">
       {sortHeader('name', 'Name')}
       {sortHeader('type', 'Typ')}
       {sortHeader('size', 'Grösse')}
       {sortHeader('modified', 'Geändert')}
-    </div>
+    </div>}
     <div className="file-scroll" ref={parentRef}>
       {!props.entries.length && <div className="empty-state">{props.emptyText ?? 'Dieser Ordner ist leer.'}</div>}
-      <div className="virtual-body" style={{ height: virtualizer.getTotalSize() }}>
-        {virtualizer.getVirtualItems().map(item => {
-          const entry = props.entries[item.index]
-          const Icon = iconFor(entry.extension, entry.isDirectory)
-          return <div key={entry.id} data-entry-id={entry.id} title="Ziehen zum Verschieben · Ctrl gedrückt halten zum Kopieren" className={`file-row ${selected.has(entry.id) ? 'selected' : ''} ${dropTarget === entry.id ? 'drop-target' : ''}`} style={{ transform: `translateY(${item.start}px)` }}
-            draggable onDragStart={event => dragOut(event, entry)}
-            onDragOver={event => { if (entry.isDirectory) event.preventDefault() }}
-            onDrop={event => { if (!entry.isDirectory || !props.onDropEntries) return; event.preventDefault(); const data = event.dataTransfer.getData('application/x-akex-paths'); if (data) props.onDropEntries(JSON.parse(data), entry, event.ctrlKey) }}
-            onClick={event => select(entry, event.ctrlKey)} onDoubleClick={() => props.onOpen(entry)}
-            onContextMenu={event => openMenu(event, entry)}>
-            <span className="name-cell"><Icon className={entry.isDirectory ? 'folder-icon' : 'file-icon'} size={19} /><span>{entry.name}</span>{entry.hidden && <small>versteckt</small>}</span>
-            <span>{fileKind(entry.extension, entry.isDirectory)}</span>
-            <span>{formatBytes(entry.isDirectory ? entry.recursiveSize : entry.size)}</span>
-            <span>{formatDate(entry.modifiedAt)}</span>
-          </div>
-        })}
-      </div>
+      {props.viewMode === 'details' ? <div className="virtual-body" style={{ height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map(item => renderEntry(props.entries[item.index], item.start))}
+      </div> : <div className={`file-layout layout-${props.viewMode}`}>{props.entries.map(entry => renderEntry(entry))}</div>}
     </div>
     {menu && <div className="context-menu" style={{ left: menu.x, top: menu.y }} onClick={event => event.stopPropagation()}>
       <button onClick={() => { props.onOpen(menu.entry); setMenu(null) }}><ExternalLink />Öffnen</button>
+      {menu.entry.isDirectory && props.onOpenTab && <button onClick={() => { props.onOpenTab?.(menu.entry); setMenu(null) }}><PanelsTopLeft />In neuem Tab öffnen</button>}
       {menu.entry.isDirectory && props.onOpenWindow && <button onClick={() => { props.onOpenWindow?.(menu.entry); setMenu(null) }}><PanelsTopLeft />In neuem Fenster öffnen</button>}
       <button onClick={() => { props.onReveal(menu.entry); setMenu(null) }}><FolderInput />Im Ordner anzeigen</button>
       <button onClick={() => { void navigator.clipboard.writeText(menu.entry.fullPath); setMenu(null) }}><Copy />Pfad kopieren</button>
