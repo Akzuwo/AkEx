@@ -6,6 +6,7 @@ import { PageFooter } from '../components/PageFooter'
 import { backend, errorMessage } from '../services/backend'
 import type { ClipboardOperation, Entry, EntrySortField, Page, SortDirection } from '../types'
 import { formatBytes, formatDate } from '../utils/format'
+import { startNativeFileDrag } from '../utils/nativeDrag'
 
 const PAGE_SIZE = 300
 
@@ -59,7 +60,10 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onOpenW
   }
   async function remove(entries: Entry[]) {
     if (!window.confirm(`${entries.length} Eintrag/Einträge in den Papierkorb verschieben?`)) return
-    try { await backend.remove(entries.map(entry => entry.fullPath)); await load(page.offset) } catch (error) { onError(errorMessage(error)) }
+    const remaining = Math.max(0, page.total - entries.length)
+    const nextOffset = remaining ? Math.min(page.offset, Math.floor((remaining - 1) / PAGE_SIZE) * PAGE_SIZE) : 0
+    try { await backend.remove(entries.map(entry => entry.fullPath)); await load(nextOffset) }
+    catch (error) { onError(errorMessage(error)); await load(page.offset) }
   }
   async function createFolder() {
     const name = window.prompt('Name des neuen Ordners', 'Neuer Ordner')
@@ -84,12 +88,20 @@ export function BrowserPage({ path, refreshToken, clipboard, onNavigate, onOpenW
     try { if (copy) await backend.copy(paths, destination.fullPath); else await backend.move(paths, destination.fullPath); await load(page.offset) }
     catch (error) { onError(errorMessage(error)) }
   }
+  async function dragOut(entries: Entry[], copy: boolean) {
+    try {
+      const paths = entries.map(entry => entry.fullPath)
+      await backend.validateDragPaths(paths)
+      const dropped = await startNativeFileDrag(paths, entries.every(entry => entry.isDirectory), copy)
+      if (dropped && !copy) await load(page.offset, true)
+    } catch (error) { onError(errorMessage(error)) }
+  }
 
   return <section className="page browser-page">
     <div className="page-heading"><div><Breadcrumbs path={path} onNavigate={onNavigate} /><p>{page.total.toLocaleString('de-CH')} Einträge · Ordnergrössen aus dem Index</p></div><div className="heading-actions"><button onClick={createFolder}><FolderPlus />Neuer Ordner</button><button className="icon-button" title="Aktualisieren" onClick={() => void load(page.offset, true)}><RefreshCw /></button></div></div>
     {loadError ? <div className="notice warning"><strong>Ordner nicht verfügbar</strong><span>{loadError}</span><span>Indexiere das Laufwerk unter „Index-Verwaltung“.</span></div> :
       <FileTable entries={page.items} onOpen={open} onReveal={entry => void reveal(entry)} onOpenWindow={entry => onOpenWindow(entry.fullPath)} onRename={rename} onDelete={remove} onProperties={properties}
-        onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(entry => entry.fullPath) })} onPaste={paste} onDropEntries={drop}
+        onClipboard={(mode, entries) => onClipboard({ mode, paths: entries.map(entry => entry.fullPath) })} onPaste={paste} onDropEntries={drop} onDragOut={(entries, copy) => void dragOut(entries, copy)}
         sortField={sortField} sortDirection={sortDirection} onSort={(field, direction) => { setSortField(field); setSortDirection(direction) }} />}
     {loading && <div className="loading-overlay"><LoaderCircle className="spin" />Lade Index …</div>}
     {!loadError && <PageFooter {...page} onPage={offset => void load(offset)} />}

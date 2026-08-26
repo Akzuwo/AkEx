@@ -19,6 +19,7 @@ use watcher::WatcherManager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_drag::init())
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
@@ -54,6 +55,7 @@ pub fn run() {
             commands::open_path,
             commands::reveal_path,
             commands::open_window,
+            commands::validate_drag_paths,
             commands::path_properties,
             commands::create_folder,
             commands::rename_entry,

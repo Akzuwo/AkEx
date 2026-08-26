@@ -175,6 +175,21 @@ pub async fn open_window(app: AppHandle, path: String) -> CommandResult<()> {
 }
 
 #[tauri::command]
+pub fn validate_drag_paths(paths: Vec<String>) -> CommandResult<()> {
+    if paths.is_empty() {
+        return Err(AppError::new(
+            "empty_drag",
+            "Es wurden keine Einträge ausgewählt.",
+        ));
+    }
+    for path in paths {
+        let path = filesystem::normalize_path(&path).map_err(AppError::from)?;
+        filesystem::validate_drag_path(&path).map_err(AppError::from)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn path_properties(path: String) -> CommandResult<PathProperties> {
     filesystem::properties(&path).map_err(AppError::from)
 }
@@ -224,9 +239,45 @@ pub fn rename_entry(
 
 #[tauri::command]
 pub fn delete_entries(state: State<'_, AppState>, paths: Vec<String>) -> CommandResult<()> {
-    for path in paths {
-        filesystem::delete_to_trash(std::slice::from_ref(&path)).map_err(AppError::from)?;
-        state.database.remove_path(&path).map_err(AppError::from)?;
+    let paths = normalize_delete_paths(paths).map_err(AppError::from)?;
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let volume_roots = state
+        .database
+        .list_volumes()
+        .map_err(AppError::from)?
+        .into_iter()
+        .map(|volume| volume.root_path.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    if paths
+        .iter()
+        .any(|path| volume_roots.contains(&path.to_ascii_lowercase()))
+    {
+        return Err(AppError::new(
+            "protected_path",
+            "Ein Laufwerk kann nicht in den Papierkorb verschoben werden.",
+        ));
+    }
+
+    let trash_result = filesystem::delete_to_trash(&paths);
+    let trash_succeeded = trash_result.is_ok();
+    let mut index_error = None;
+    for path in &paths {
+        let was_removed = trash_succeeded
+            || matches!(
+                fs::symlink_metadata(path),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound
+            );
+        if was_removed {
+            if let Err(error) = state.database.remove_path(path) {
+                index_error.get_or_insert(error);
+            }
+        }
+    }
+    trash_result.map_err(AppError::from)?;
+    if let Some(error) = index_error {
+        return Err(AppError::from(error));
     }
     Ok(())
 }
@@ -341,9 +392,29 @@ fn encode_query_component(value: &str) -> String {
         .collect()
 }
 
+fn normalize_delete_paths(paths: Vec<String>) -> anyhow::Result<Vec<String>> {
+    let mut normalized = paths
+        .into_iter()
+        .map(|path| filesystem::normalize_path(&path))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    normalized.sort_by_key(|path| path.len());
+    let mut result = Vec::<String>::new();
+    for path in normalized {
+        let lower = path.to_ascii_lowercase();
+        let nested = result.iter().any(|parent| {
+            let parent = parent.trim_end_matches('\\').to_ascii_lowercase();
+            lower.trim_end_matches('\\') == parent || lower.starts_with(&format!("{parent}\\"))
+        });
+        if !nested {
+            result.push(path);
+        }
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::encode_query_component;
+    use super::{encode_query_component, normalize_delete_paths};
 
     #[test]
     fn window_path_is_encoded_as_a_query_component() {
@@ -352,5 +423,17 @@ mod tests {
             "C%3A%5CMeine%20Dateien%5CBilder"
         );
         assert_eq!(encode_query_component("D:\\Grüsse"), "D%3A%5CGr%C3%BCsse");
+    }
+
+    #[test]
+    fn delete_paths_are_deduplicated_and_nested_entries_are_removed() {
+        let paths = normalize_delete_paths(vec![
+            "C:\\Daten\\Unterordner\\datei.txt".into(),
+            "c:\\daten".into(),
+            "C:\\Andere Datei.txt".into(),
+            "C:\\DATEN".into(),
+        ])
+        .unwrap();
+        assert_eq!(paths, vec!["C:\\daten", "C:\\Andere Datei.txt"]);
     }
 }

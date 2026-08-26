@@ -329,12 +329,23 @@ impl Database {
     pub fn remove_path(&self, path: &str) -> Result<()> {
         let mut conn = self.connect()?;
         let tx = conn.transaction()?;
-        if let Some((id, parent_id, bytes)) = tx.query_row(
-            "SELECT id,parent_id,CASE WHEN is_directory=1 THEN recursive_size ELSE size END FROM entries WHERE full_path=?1",
-            [path], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, i64>(2)?)),
+        if let Some((id, parent_id, bytes, volume_id)) = tx.query_row(
+            "SELECT id,parent_id,CASE WHEN is_directory=1 THEN recursive_size ELSE size END,volume_id FROM entries WHERE full_path=?1",
+            [path], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?)),
         ).optional()? {
+            let removed_count: i64 = tx.query_row(
+                "WITH RECURSIVE subtree(id) AS (
+                    SELECT ?1 UNION ALL SELECT e.id FROM entries e JOIN subtree s ON e.parent_id=s.id
+                 ) SELECT COUNT(*) FROM subtree",
+                [id],
+                |r| r.get(0),
+            )?;
             tx.execute("DELETE FROM entries WHERE id=?1", [id])?;
             apply_delta(&tx, parent_id, -bytes)?;
+            tx.execute(
+                "UPDATE volumes SET entry_count=MAX(0,entry_count-?2) WHERE id=?1",
+                params![volume_id, removed_count],
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -698,6 +709,7 @@ mod tests {
         db.remove_path("T:\\data\\a.bin").unwrap();
         assert_eq!(db.get_entry("T:\\data").unwrap().unwrap().recursive_size, 0);
         assert_eq!(db.get_entry("T:\\").unwrap().unwrap().recursive_size, 0);
+        assert_eq!(db.list_volumes().unwrap()[0].entry_count, 2);
     }
 
     #[test]

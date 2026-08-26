@@ -156,6 +156,33 @@ pub fn reveal_path(path: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn validate_drag_path(path: &str) -> Result<()> {
+    let path_value = Path::new(path);
+    if !path_value.is_absolute() {
+        bail!("{} ist kein absoluter Pfad", path);
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Storage::FileSystem::GetDriveTypeW, System::WindowsProgramming::DRIVE_REMOTE,
+        };
+
+        if path.starts_with("\\\\") {
+            bail!("Dateien auf Netzwerkpfaden können derzeit nicht herausgezogen werden");
+        }
+        if path.len() >= 2 && path.as_bytes()[1] == b':' {
+            let root = format!("{}\\", &path[..2]);
+            if unsafe { GetDriveTypeW(wide(&root).as_ptr()) } == DRIVE_REMOTE {
+                bail!("Dateien auf Netzlaufwerken können derzeit nicht herausgezogen werden");
+            }
+        }
+    }
+    if !path_value.exists() {
+        bail!("{} ist nicht mehr vorhanden", path);
+    }
+    Ok(())
+}
+
 pub fn create_directory(parent: &str, name: &str) -> Result<PathBuf> {
     validate_name(name)?;
     let target = Path::new(parent).join(name);
@@ -177,11 +204,9 @@ pub fn rename_path(source: &str, new_name: &str) -> Result<PathBuf> {
 }
 
 pub fn delete_to_trash(paths: &[String]) -> Result<()> {
-    for path in paths {
-        trash::delete(path).with_context(|| {
-            format!("{} konnte nicht in den Papierkorb verschoben werden", path)
-        })?;
-    }
+    trash::delete_all(paths).context(
+        "Die ausgewählten Einträge konnten nicht vollständig in den Papierkorb verschoben werden",
+    )?;
     Ok(())
 }
 
@@ -326,5 +351,10 @@ mod tests {
         assert!(validate_name("hello.txt").is_ok());
         assert!(validate_name("../oops").is_err());
         assert!(validate_name("bad:name").is_err());
+    }
+
+    #[test]
+    fn rejects_relative_drag_paths() {
+        assert!(validate_drag_path("relative\\file.txt").is_err());
     }
 }

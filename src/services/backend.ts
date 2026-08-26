@@ -16,6 +16,7 @@ export const backend = {
   open: (path: string) => invoke<void>('open_path', { path }),
   reveal: (path: string) => invoke<void>('reveal_path', { path }),
   openWindow: (path: string) => invoke<void>('open_window', { path }),
+  validateDragPaths: (paths: string[]) => invoke<void>('validate_drag_paths', { paths }),
   properties: (path: string) => invoke<PathProperties>('path_properties', { path }),
   createFolder: (parent: string, name: string) => invoke<Entry>('create_folder', { parent, name }),
   rename: (path: string, newName: string) => invoke<Entry>('rename_entry', { path, newName }),
