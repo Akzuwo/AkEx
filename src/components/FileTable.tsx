@@ -18,7 +18,7 @@ interface Props {
   onProperties: (entry: Entry) => void
   onClipboard: (mode: 'copy' | 'move', entries: Entry[]) => void
   onPaste?: () => void
-  onDropEntries?: (paths: string[], destination: Entry, copy: boolean) => void
+  onDropEntries?: (paths: string[], destination: Entry | null, copy: boolean) => void
   onDragOut: (entries: Entry[], copy: boolean) => void
   sortField: EntrySortField
   sortDirection: SortDirection
@@ -65,13 +65,18 @@ export function FileTable(props: Props) {
       const id = Number(element?.dataset.entryId)
       return visibleEntries.find(entry => entry.id === id && entry.isDirectory)
     }
+    const insideTable = (position: { x: number; y: number }) => {
+      const scale = window.devicePixelRatio || 1
+      const element = document.elementFromPoint(position.x / scale, position.y / scale)
+      return Boolean(element && shellRef.current?.contains(element))
+    }
     void getCurrentWebview().onDragDropEvent(event => {
       if (event.payload.type === 'enter' || event.payload.type === 'over') {
         setDropTarget(entryAt(event.payload.position)?.id ?? null)
       } else if (event.payload.type === 'drop') {
         const destination = entryAt(event.payload.position)
         setDropTarget(null)
-        if (destination) dropEntries(event.payload.paths, destination, copyDropRef.current)
+        if (destination || insideTable(event.payload.position)) dropEntries(event.payload.paths, destination ?? null, copyDropRef.current)
       } else {
         setDropTarget(null)
       }

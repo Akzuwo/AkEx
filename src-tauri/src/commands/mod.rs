@@ -186,6 +186,8 @@ pub async fn open_window(app: AppHandle, path: String) -> CommandResult<()> {
         .title(format!("Akex – {path}"))
         .inner_size(1280.0, 800.0)
         .min_inner_size(960.0, 640.0)
+        .icon(crate::APP_ICON.clone())
+        .map_err(|error| AppError::new("window_error", error.to_string()))?
         .build()
         .map_err(|error| AppError::new("window_error", error.to_string()))?;
     Ok(())

@@ -16,6 +16,9 @@ use indexer::IndexManager;
 use tauri::Manager;
 use watcher::WatcherManager;
 
+pub(crate) const APP_ICON: tauri::image::Image<'static> =
+    tauri::include_image!("./icons/128x128.png");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -28,6 +31,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_icon(APP_ICON.clone())?;
+            }
             let data_dir = app.path().app_data_dir()?;
             let database = Arc::new(Database::new(data_dir.join("akex-index.sqlite3")));
             database.initialize()?;

@@ -90,7 +90,7 @@ export default function App() {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey && event.key.toLocaleLowerCase() === 'f') { event.preventDefault(); setActiveView('search'); searchRef.current?.focus() }
       else if (event.ctrlKey && event.key.toLocaleLowerCase() === 'n') { event.preventDefault(); if (navigation.currentPath) void openWindow(navigation.currentPath) }
-      else if (event.ctrlKey && event.key.toLocaleLowerCase() === 't') { event.preventDefault(); navigation.openTab(navigation.currentPath); setActiveView('browser') }
+      else if (event.ctrlKey && event.key.toLocaleLowerCase() === 't') { event.preventDefault(); navigation.openTab(volumes[0]?.rootPath ?? ''); setActiveView('browser') }
       else if (event.ctrlKey && event.key.toLocaleLowerCase() === 'w') { event.preventDefault(); void closeTab(navigation.activeTabId) }
       else if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); navigation.back() }
       else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); navigation.forward() }
@@ -99,12 +99,27 @@ export default function App() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [closeTab, navigation])
+  }, [closeTab, navigation, volumes])
 
   function browse(path: string) { navigation.navigate(path); setActiveView('browser') }
   function openTab(path: string) { navigation.openTab(path); setActiveView('browser') }
   async function openWindow(path: string) {
     try { await backend.openWindow(path) } catch (reason) { setError(errorMessage(reason)) }
+  }
+  async function detachTab(id: string, path: string) {
+    const destination = path || volumes[0]?.rootPath
+    if (!destination) return
+    try {
+      await backend.openWindow(destination)
+      await closeTab(id)
+    } catch (reason) { setError(errorMessage(reason)) }
+  }
+  async function dropOnTab(paths: string[], destination: string, copy: boolean) {
+    try {
+      if (copy) await backend.copy(paths, destination)
+      else await backend.move(paths, destination)
+      setRefreshToken(value => value + 1)
+    } catch (reason) { setError(errorMessage(reason)) }
   }
   function completeOnboarding() {
     localStorage.setItem('akex:onboarding-complete', 'true')
@@ -122,7 +137,7 @@ export default function App() {
     <div className="workspace">
       <Toolbar path={navigation.currentPath} query={query} searchRef={searchRef} canBack={navigation.canBack} canForward={navigation.canForward} canUp={navigation.canUp}
         onBack={navigation.back} onForward={navigation.forward} onUp={navigation.up} onPath={browse} onQuery={value => { setQuery(value); setActiveView('search') }} onSearchFocus={() => setActiveView('search')} onRefresh={() => setRefreshToken(value => value + 1)} onNewWindow={() => void openWindow(navigation.currentPath)} onSettings={() => setSettingsOpen(true)} />
-      <TabBar tabs={navigation.tabs} activeTabId={navigation.activeTabId} onActivate={id => { navigation.activateTab(id); setActiveView('browser') }} onClose={id => void closeTab(id)} onNew={() => { navigation.openTab(navigation.currentPath); setActiveView('browser') }} />
+      <TabBar tabs={navigation.tabs} activeTabId={navigation.activeTabId} onActivate={id => { navigation.activateTab(id); setActiveView('browser') }} onClose={id => void closeTab(id)} onNew={() => { navigation.openTab(volumes[0]?.rootPath ?? ''); setActiveView('browser') }} onDetach={(id, path) => void detachTab(id, path)} onDropFiles={(paths, destination, copy) => void dropOnTab(paths, destination, copy)} />
       <main>
         {activeView === 'browser' && <BrowserPage path={navigation.currentPath} refreshToken={refreshToken} clipboard={clipboard} viewMode={fileViewMode} paneMode={filePaneMode} onViewMode={setFileViewMode} onPaneMode={setFilePaneMode} onNavigate={navigation.navigate} onOpenTab={openTab} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}
         {activeView === 'search' && <SearchPage query={query} refreshToken={refreshToken} viewMode={fileViewMode} paneMode={filePaneMode} onViewMode={setFileViewMode} onPaneMode={setFilePaneMode} onNavigate={browse} onOpenTab={openTab} onOpenWindow={openWindow} onClipboard={setClipboard} onError={setError} />}

@@ -1,5 +1,5 @@
 import { FolderPlus, LoaderCircle, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Breadcrumbs } from '../components/Breadcrumbs'
 import { FileTable } from '../components/FileTable'
 import { PageFooter } from '../components/PageFooter'
@@ -35,6 +35,8 @@ export function BrowserPage({ path, refreshToken, clipboard, viewMode, paneMode,
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [selectedEntries, setSelectedEntries] = useState<Entry[]>([])
   const handledRefresh = useRef(refreshToken)
+  const currentPath = useRef(path)
+  useLayoutEffect(() => { currentPath.current = path }, [path])
 
   const load = useCallback(async (offset = 0, reconcile = false) => {
     if (!path) return
@@ -92,16 +94,20 @@ export function BrowserPage({ path, refreshToken, clipboard, viewMode, paneMode,
       await load(0)
     } catch (error) { onError(errorMessage(error)) }
   }
-  async function drop(paths: string[], destination: Entry, copy: boolean) {
-    try { if (copy) await backend.copy(paths, destination.fullPath); else await backend.move(paths, destination.fullPath); await load(page.offset) }
+  async function drop(paths: string[], destination: Entry | null, copy: boolean) {
+    try { if (copy) await backend.copy(paths, destination?.fullPath ?? path); else await backend.move(paths, destination?.fullPath ?? path); await load(page.offset) }
     catch (error) { onError(errorMessage(error)) }
   }
   async function dragOut(entries: Entry[], copy: boolean) {
     try {
       const paths = entries.map(entry => entry.fullPath)
+      const sourcePath = path
       await backend.validateDragPaths(paths)
       const dropped = await startNativeFileDrag(paths, entries.every(entry => entry.isDirectory), copy)
-      if (dropped && !copy) await load(page.offset, true)
+      if (dropped && !copy) {
+        await backend.refresh(sourcePath)
+        if (currentPath.current === sourcePath) await load(page.offset)
+      }
     } catch (error) { onError(errorMessage(error)) }
   }
 
