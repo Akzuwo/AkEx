@@ -8,11 +8,6 @@ on:
         description: Version im SemVer-Format, z. B. 0.2.0
         required: true
         type: string
-      notes:
-        description: Optionale Release Notes
-        required: false
-        default: Automatisch erstelltes Akex-Release.
-        type: string
       prerelease:
         description: Als Vorabversion veröffentlichen
         required: true
@@ -80,6 +75,24 @@ jobs:
       - name: Rust testen
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      - name: Release Notes prüfen und laden
+        id: release_notes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:RELEASE_VERSION.Trim().TrimStart('v')
+          $file = "releasenotes/release-$version.md"
+
+          if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+            throw "Release notes file not found: $file"
+          }
+
+          $delimiter = "AKEX_RELEASE_NOTES_$([guid]::NewGuid().ToString('N'))"
+          "body<<$delimiter" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Get-Content -LiteralPath $file -Raw | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $delimiter | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Signierte Installer und GitHub Release erstellen
         uses: tauri-apps/tauri-action@v1
         env:
@@ -89,7 +102,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: Akex v__VERSION__
-          releaseBody: ${{ inputs.notes }}
+          releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: false
           prerelease: ${{ inputs.prerelease }}
           uploadUpdaterJson: true
