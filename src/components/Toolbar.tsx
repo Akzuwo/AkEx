@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ArrowUp, PanelsTopLeft, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ArrowUp, PanelsTopLeft, RefreshCw, Search, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 interface Props {
@@ -16,6 +16,7 @@ interface Props {
   onSearchFocus: () => void
   onRefresh: () => void
   onNewWindow: () => void
+  onSettings: () => void
 }
 
 export function Toolbar(props: Props) {
@@ -32,6 +33,6 @@ export function Toolbar(props: Props) {
     <form className="path-field" onSubmit={event => { event.preventDefault(); props.onPath(editingPath) }}>
       <input aria-label="Pfad" value={editingPath} onChange={event => setEditingPath(event.target.value)} />
     </form>
-    <div className="search-field"><Search size={17} /><input ref={props.searchRef} aria-label="Index durchsuchen" placeholder="Index durchsuchen …" value={props.query} onFocus={props.onSearchFocus} onChange={event => props.onQuery(event.target.value)} /></div>
+    <div className="toolbar-end"><div className="search-field"><Search size={17} /><input ref={props.searchRef} aria-label="Index durchsuchen" placeholder="Index durchsuchen …" value={props.query} onFocus={props.onSearchFocus} onChange={event => props.onQuery(event.target.value)} /></div><button className="settings-button" title="Einstellungen" aria-label="Einstellungen öffnen" onClick={props.onSettings}><Settings /></button></div>
   </header>
 }

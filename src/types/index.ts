@@ -84,5 +84,6 @@ export interface PathProperties {
 }
 
 export interface AppCommandError { code?: string; message?: string }
-export type View = 'browser' | 'search' | 'analysis' | 'index'
+export type View = 'browser' | 'search' | 'analysis'
+export type Theme = 'dark' | 'light'
 export type ClipboardOperation = { mode: 'copy' | 'move'; paths: string[] } | null

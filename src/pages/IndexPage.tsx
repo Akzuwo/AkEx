@@ -5,7 +5,7 @@ import { backend, errorMessage } from '../services/backend'
 import type { ScanProgress, Volume } from '../types'
 import { formatBytes, formatCount, formatDate } from '../utils/format'
 
-export function IndexPage({ volumes, onChanged, onError }: { volumes: Volume[]; onChanged: () => void; onError: (message: string) => void }) {
+export function IndexPage({ volumes, onChanged, onError, embedded = false }: { volumes: Volume[]; onChanged: () => void; onError: (message: string) => void; embedded?: boolean }) {
   const [scans, setScans] = useState<Record<string, ScanProgress>>({})
   useEffect(() => {
     const disposers = [
@@ -28,7 +28,7 @@ export function IndexPage({ volumes, onChanged, onError }: { volumes: Volume[]; 
     try { const result = await backend.verifyIndex(volume.id); window.alert(result.ok ? `Index ${volume.rootPath} ist konsistent.` : `Probleme gefunden\nOrphans: ${result.orphanCount}\nGrössenabweichungen: ${result.sizeMismatchCount}\nSQLite: ${result.integrityMessage}`) }
     catch (error) { onError(errorMessage(error)) }
   }
-  return <section className="page index-page"><div className="page-heading"><div><h1><Database />Index-Verwaltung</h1><p>Laufwerke auswählen, Zustand prüfen und Index reparieren</p></div></div>
+  return <section className={embedded ? 'settings-index' : 'page index-page'}><div className="page-heading"><div><h1><Database />Index-Verwaltung</h1><p>Laufwerke auswählen, Zustand prüfen und Index reparieren</p></div></div>
     <div className="index-list">{volumes.map(volume => {
       const scan = scans[volume.rootPath]
       const active = scan?.phase === 'Scanning' || volume.indexStatus === 'Indexing'
